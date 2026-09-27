@@ -1,0 +1,69 @@
+---
+# Rolle docmost - Standardwerte.
+# ALLE Werte sind generische Platzhalter. Es stehen KEINE echten Hosts, Domains,
+# IPs oder Passwoerter im Repo.
+
+# --- Zielpfad / Compose ------------------------------------------------------
+docmost_dir: /opt/docmost
+docmost_compose_project: docmost
+# "missing" = Images nur ziehen, wenn lokal nicht vorhanden (idempotent).
+docmost_compose_pull: missing
+
+# --- Images (Versionen bewusst als Variable -> reproduzierbar pinnen) -------
+docmost_image: "docmost/docmost:latest"
+docmost_postgres_image: "postgres:15-alpine"
+docmost_redis_image: "redis:7-alpine"
+
+# --- Anwendung ---------------------------------------------------------------
+# Oeffentliche Basis-URL der Instanz, z. B. https://<domain> (z. B. https://docs.example.com)
+docmost_app_url: "https://<domain>"
+docmost_http_port: 3000
+# Nur Loopback binden: Zugriff ausschliesslich ueber den Reverse-Proxy (HTTPS).
+docmost_http_bind: "127.0.0.1"
+docmost_file_upload_size_limit: "50mb"
+docmost_disable_telemetry: true
+
+# --- Datenbank / Cache -------------------------------------------------------
+docmost_db_name: docmost
+docmost_db_user: docmost
+docmost_db_host: db
+docmost_db_port: 5432
+docmost_redis_url: "redis://redis:6379"
+
+# --- Secrets (NICHT im Repo) -------------------------------------------------
+# Bevorzugt per Controller-Umgebung/Vault setzen: DOCMOST_APP_SECRET,
+# DOCMOST_DB_PASSWORD. Bleiben sie leer, erzeugt die Rolle beim ersten Lauf
+# Zufallswerte und legt sie in {{ docmost_secrets_file }} ab (chmod 600,
+# nicht versioniert). Vorhandene Werte bleiben bei weiteren Laeufen stabil.
+docmost_app_secret: "{{ lookup('env', 'DOCMOST_APP_SECRET') | default('', true) }}"
+docmost_db_password: "{{ lookup('env', 'DOCMOST_DB_PASSWORD') | default('', true) }}"
+docmost_secrets_file: "{{ docmost_dir }}/.secrets.yml"
+docmost_env_file: "{{ docmost_dir }}/.env"
+
+# --- Optionaler Mailversand (SMTP) -------------------------------------------
+docmost_smtp_enabled: false
+docmost_smtp_host: ""
+docmost_smtp_port: 587
+docmost_smtp_username: ""
+docmost_smtp_password: "{{ lookup('env', 'DOCMOST_SMTP_PASSWORD') | default('', true) }}"
+docmost_smtp_secure: true
+docmost_mail_from_address: "docmost@<domain>"
+docmost_mail_from_name: "Docmost"
+
+# --- Optionaler Reverse-Proxy (Nginx) ----------------------------------------
+docmost_enable_nginx: false
+docmost_server_name: "docs.example.com"
+docmost_nginx_conf: "/etc/nginx/sites-available/docmost.conf"
+docmost_nginx_enabled_link: "/etc/nginx/sites-enabled/docmost.conf"
+# TLS: "none" | "selfsigned" | "letsencrypt"
+docmost_tls_mode: "none"
+docmost_tls_dir: "/etc/ssl/docmost"
+docmost_tls_cert: "{{ docmost_tls_dir }}/fullchain.pem"
+docmost_tls_key: "{{ docmost_tls_dir }}/privkey.pem"
+docmost_letsencrypt_email: ""
+docmost_nginx_client_max_body_size: "50m"
+
+# --- Optional Firewall -------------------------------------------------------
+docmost_manage_ufw: false
+docmost_ufw_allow_http: true
+docmost_ufw_allow_https: true
