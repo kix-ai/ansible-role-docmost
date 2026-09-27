@@ -1,0 +1,96 @@
+---
+# Rolle docmost - Docmost (Wiki/Dokumentation) idempotent als Docker-Compose-Stack
+# aufsetzen: App + PostgreSQL + Redis, optional Nginx als Reverse-Proxy mit TLS.
+#
+# Generisch & secret-frei: Zugangsdaten kommen aus der Controller-Umgebung oder
+# werden beim ersten Lauf zufaellig erzeugt und nur auf dem Zielhost abgelegt.
+
+- name: Voraussetzungen pruefen (docmost_app_url gesetzt)
+  ansible.builtin.assert:
+    that:
+      - docmost_app_url | length > 0
+      - "'<' not in docmost_app_url"
+      - "'<' not in docmost_server_name"
+    fail_msg: >-
+      docmost_app_url ist nicht gesetzt oder enthaelt noch den Platzhalter
+      '<domain>'. Bitte die oeffentliche URL setzen, z. B.
+      -e docmost_app_url=https://docs.example.com
+    quiet: true
+
+- name: Verzeichnisstruktur anlegen
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ docmost_dir }}"
+    - "{{ docmost_dir }}/data"
+
+- name: Pruefen, ob bereits eine Secrets-Datei existiert
+  ansible.builtin.stat:
+    path: "{{ docmost_secrets_file }}"
+  register: docmost_secrets_stat
+
+# Zufallswerte nur beim ersten Lauf. force=false laesst eine vorhandene Datei
+# unveraendert -> APP_SECRET/DB-Passwort bleiben ueber Laeufe stabil.
+- name: Secrets-Datei einmalig erzeugen (chmod 600, nicht im Repo)
+  ansible.builtin.copy:
+    content: |
+      docmost_app_secret: "{{ lookup('password', '/dev/null length=64 chars=hexdigits') }}"
+      docmost_db_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    dest: "{{ docmost_secrets_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  when: not docmost_secrets_stat.stat.exists
+
+- name: Gespeicherte Secrets laden
+  ansible.builtin.include_vars:
+    file: "{{ docmost_secrets_file }}"
+    name: docmost_stored
+
+- name: Effektive Zugangsdaten bestimmen (explizit > gespeichert)
+  ansible.builtin.set_fact:
+    _docmost_app_secret: >-
+      {{ docmost_app_secret if (docmost_app_secret | default('', true) | length > 0)
+         else (docmost_stored.get('docmost_app_secret') | default('', true)) }}
+    _docmost_db_password: >-
+      {{ docmost_db_password if (docmost_db_password | default('', true) | length > 0)
+         else (docmost_stored.get('docmost_db_password') | default('', true)) }}
+  no_log: true
+
+- name: Compose-Umgebungsdatei rendern (.env, chmod 600)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ docmost_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Docmost-Stack neu starten
+
+- name: docker-compose.yml rendern
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ docmost_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Docmost-Stack neu starten
+
+- name: Docmost-Stack hochfahren (idempotent via docker compose v2)
+  community.docker.docker_compose_v2:
+    project_src: "{{ docmost_dir }}"
+    project_name: "{{ docmost_compose_project }}"
+    state: present
+    pull: "{{ docmost_compose_pull }}"
+
+- name: Reverse-Proxy einrichten (optional)
+  ansible.builtin.include_tasks: nginx.yml
+  when: docmost_enable_nginx | bool
+
+- name: Firewall-Regeln setzen (optional)
+  ansible.builtin.include_tasks: firewall.yml
+  when: docmost_manage_ufw | bool
