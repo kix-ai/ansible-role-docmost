@@ -1,0 +1,19 @@
+# Ansible / Editor
+*.retry
+.ansible/
+__pycache__/
+*.pyc
+.venv/
+.molecule/
+
+# Niemals versionierte Werte/Inventare
+inventory/hosts.yml
+*.env
+.env
+.secrets.yml
+*.vault
+
+# Editor
+.idea/
+.vscode/
+*.swp
