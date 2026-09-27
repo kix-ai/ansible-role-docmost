@@ -1,0 +1,99 @@
+---
+# Optionale Tasks: Nginx als Reverse-Proxy mit TLS vor Docmost.
+# Wird nur ausgefuehrt, wenn docmost_enable_nginx=true ist.
+
+- name: Nginx installieren
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: TLS-Verzeichnis anlegen
+  ansible.builtin.file:
+    path: "{{ docmost_tls_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: docmost_tls_mode | default('none') != 'none'
+
+- name: Selbst-signiertes Zertifikat erzeugen (nur beim ersten Lauf)
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650
+      -keyout {{ docmost_tls_key }} -out {{ docmost_tls_cert }}
+      -subj "/CN={{ docmost_server_name }}"
+      -addext "subjectAltName=DNS:{{ docmost_server_name }}"
+    creates: "{{ docmost_tls_cert }}"
+  when: docmost_tls_mode | default('none') == 'selfsigned'
+
+- name: Key-Rechte haerten (chmod 600)
+  ansible.builtin.file:
+    path: "{{ docmost_tls_key }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: docmost_tls_mode | default('none') != 'none'
+
+- name: Certbot installieren (Let's Encrypt)
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+  when:
+    - docmost_tls_mode | default('none') == 'letsencrypt'
+    - docmost_letsencrypt_email | length > 0
+
+# Setzt voraus: DNS der Domain zeigt auf diesen Host, Port 80 ist erreichbar und
+# noch kein Dienst belegt ihn (certbot --standalone bindet Port 80 selbst).
+- name: Let's-Encrypt-Zertifikat anfordern
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --standalone --non-interactive --agree-tos
+      --email {{ docmost_letsencrypt_email }}
+      -d {{ docmost_server_name }}
+    creates: "/etc/letsencrypt/live/{{ docmost_server_name }}/fullchain.pem"
+  when:
+    - docmost_tls_mode | default('none') == 'letsencrypt'
+    - docmost_letsencrypt_email | length > 0
+
+- name: Let's-Encrypt-Zertifikatspfade verwenden
+  ansible.builtin.set_fact:
+    docmost_effective_tls_cert: "/etc/letsencrypt/live/{{ docmost_server_name }}/fullchain.pem"
+    docmost_effective_tls_key: "/etc/letsencrypt/live/{{ docmost_server_name }}/privkey.pem"
+  when: docmost_tls_mode | default('none') == 'letsencrypt'
+
+- name: Effektive Zertifikatspfade fuer selfsigned setzen
+  ansible.builtin.set_fact:
+    docmost_effective_tls_cert: "{{ docmost_tls_cert }}"
+    docmost_effective_tls_key: "{{ docmost_tls_key }}"
+  when: docmost_tls_mode | default('none') != 'letsencrypt'
+
+- name: Nginx-Konfiguration rendern
+  ansible.builtin.template:
+    src: nginx-docmost.conf.j2
+    dest: "{{ docmost_nginx_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Nginx neu laden
+
+- name: Seite aktivieren (Symlink)
+  ansible.builtin.file:
+    src: "{{ docmost_nginx_conf }}"
+    dest: "{{ docmost_nginx_enabled_link }}"
+    state: link
+    force: true
+  notify: Nginx neu laden
+
+- name: Default-Seite deaktivieren (falls vorhanden)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Nginx neu laden
+
+- name: Nginx aktivieren und starten
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: started
