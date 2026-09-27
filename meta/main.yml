@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: docmost
+  author: kix-ai
+  description: >-
+    Docmost (Wiki/Dokumentation) idempotent per Docker-Compose aufsetzen
+    (App, PostgreSQL, Redis) mit optionalem Nginx-Reverse-Proxy und TLS.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions: [bookworm]
+    - name: Ubuntu
+      versions: [jammy, noble]
+  galaxy_tags: [docmost, wiki, documentation, docker, compose, postgres, nginx]
+dependencies: []
