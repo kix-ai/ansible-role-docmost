@@ -1,0 +1,11 @@
+---
+- name: Docmost-Stack neu starten
+  community.docker.docker_compose_v2:
+    project_src: "{{ docmost_dir }}"
+    project_name: "{{ docmost_compose_project }}"
+    state: restarted
+
+- name: Nginx neu laden
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
