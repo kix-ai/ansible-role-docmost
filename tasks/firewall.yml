@@ -1,0 +1,11 @@
+---
+# Optionale Tasks: UFW-Freigaben fuer den Reverse-Proxy.
+
+- name: UFW-Regeln fuer HTTP/HTTPS freigeben
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: >-
+    {{ (['80'] if docmost_ufw_allow_http else []) +
+       (['443'] if docmost_ufw_allow_https else []) }}
