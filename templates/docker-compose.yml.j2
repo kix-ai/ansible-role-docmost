@@ -1,0 +1,52 @@
+---
+# Docmost - Docker-Compose-Stack (App + PostgreSQL + Redis).
+# Wird von der Ansible-Rolle "docmost" gerendert. Vertrauliche Werte stehen in
+# der .env (chmod 600, nicht im Repo); hier nur Variablen-Substitution.
+name: {{ docmost_compose_project }}
+
+services:
+  docmost:
+    image: {{ docmost_image }}
+    container_name: docmost
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      # Nur Loopback: oeffentlicher Zugriff ausschliesslich ueber den Reverse-Proxy.
+      - "{{ docmost_http_bind }}:{{ docmost_http_port }}:{{ docmost_http_port }}"
+    volumes:
+      - docmost_data:/app/data
+
+  db:
+    image: {{ docmost_postgres_image }}
+    container_name: docmost_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: {{ docmost_db_name }}
+      POSTGRES_USER: {{ docmost_db_user }}
+      POSTGRES_PASSWORD: ${DOCMOST_DB_PASSWORD:?DOCMOST_DB_PASSWORD muss in .env gesetzt sein}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ docmost_db_user }} -d {{ docmost_db_name }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: {{ docmost_redis_image }}
+    container_name: docmost_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  docmost_data:
+  postgres_data:
+  redis_data:
